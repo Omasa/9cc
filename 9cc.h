@@ -1,86 +1,96 @@
-#include<ctype.h>
-#include<stdarg.h>
-#include<stdbool.h>
-#include<stdio.h>
-#include<stdlib.h>
-#include<string.h>
+#include <ctype.h>
+#include <stdarg.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
+//
+// tokenize.c
+//
+
+// Token
 typedef enum {
-	TK_RESERVED, //記号
-	TK_IDENT,    //識別子
-	TK_NUM,      //整数トークン
-	TK_EOF       //入力の終わりを表すトークン
+	TK_RESERVED, // Keywords or punctuators
+	TK_IDENT,    // Identifiers
+	TK_NUM,      // Integer literals
+	TK_EOF,      // End-of-file markers
 } TokenKind;
 
+// Token type
 typedef struct Token Token;
-
-struct Token{
-	TokenKind kind; //トークンの型
-	Token *next;    //次の入力トークン
-	int val;        //kindがTK_NUMの場合、その数値
-	char *str;      //トークン文字列
-	int len;        //トークンの長さ
+struct Token {
+	TokenKind kind; // Token kind
+	Token *next;    // Next token
+	int val;        // If kind is TK_NUM, its value
+	char *str;      // Token string
+	int len;        // Token length
 };
 
-
-typedef struct LVar LVar;
-
-//ローカル変数の型
-struct LVar {
-	LVar *next;  //次の変数化NULL
-	char *name;  //変数の名前
-	int len;  //名前の長さ
-	int offset; //RBPからのオフセット
-};
-
-//ローカル変数
-LVar *locals;
-
-void error(char *fmt,...);
-void error_at(char *loc, char *fmt,...);
+void error(char *fmt, ...);
+void error_at(char *loc, char *fmt, ...);
 bool consume(char *op);
+char *strndup(char *p, int len);
 Token *consume_ident();
-void expect(char *Gop);
+void expect(char *op);
 int expect_number();
 bool at_eof();
-Token *new_token(TokenKind kind, Token *cur, char*str,int len);
+Token *new_token(TokenKind kind, Token *cur, char *str, int len);
 Token *tokenize();
-LVar *find_lvar(Token *tok);
 
 extern char *user_input;
-
-//現在注目しているトークン
 extern Token *token;
 
+//
+// parse.c
+//
 
-//抽象構文木のノードの種類
-typedef enum {
-	ND_ADD,    // +
-	ND_SUB,    // -
-	ND_MUL,    // *
-	ND_DIV,    // /
-	ND_ASSIGN, // =
-	ND_EQ,     // ==
-	ND_NE,     // !=
-	ND_LT,     // <
-	ND_LE,     // <=
-	ND_LVAR,   // ローカル変数
-	ND_NUM,    // 整数
-} NodeKind;
-
-typedef struct Node Node;
-
-//抽象構文木のノードの型
-struct Node {
-	NodeKind kind; //ノードの型
-	Node *lhs;     //左辺
-	Node *rhs;     //右辺
-	int val;       //kindがND_NUMの場合のみ使う
-	int offset;    //kindがND_LVARの場合のみ使う
+// Local variable
+typedef struct Var Var;
+struct Var {
+	Var *next;
+	char *name; // Variable name
+	int offset; // Offset from RBP
 };
 
-//ローカル変数
-LVar *locals;
-void program();
-void codegen();
+// AST node
+typedef enum {
+	ND_ADD,       // +
+	ND_SUB,       // -
+	ND_MUL,       // *
+	ND_DIV,       // /
+	ND_EQ,        // ==
+	ND_NE,        // !=
+	ND_LT,        // <
+	ND_LE,        // <=
+	ND_ASSIGN,    // =
+	ND_RETURN,    // "return"
+	ND_EXPR_STMT, // Expression statement
+	ND_VAR,       // Variable
+	ND_NUM,       // Integer
+} NodeKind;
 
+// AST node type
+typedef struct Node Node;
+struct Node {
+	NodeKind kind; // Node kind
+	Node *next;    // Next node
+	Node *lhs;     // Left-hand side
+	Node *rhs;     // Right-hand side
+	Var *var;      // Used if kind == ND_VAR
+	int val;       // Used if kind == ND_NUM
+};
+
+typedef struct {
+	Node *node;
+	Var *locals;
+	int stack_size;
+} Program;
+
+Program *program();
+
+//
+// codegen.c
+//
+
+void codegen(Program *prog);

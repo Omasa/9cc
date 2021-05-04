@@ -1,136 +1,195 @@
 #include"9cc.h"
 
-char *user_input;
-Token *token;
+Var *locals;
 
-// エラーを報告するための関数
-// printfと同じ引数をとる
-void error(char *fmt, ...){
-	va_list ap;
-	va_start(ap,fmt);
-	vfprintf(stderr,fmt,ap);
-	fprintf(stderr,"\n");
-	exit(1);
-}
-
-// エラー箇所の報告
-void error_at(char *loc,char *fmt, ...){
-	va_list ap;
-	va_start(ap,fmt);
-
-	int pos = loc - user_input;
-	fprintf(stderr,"%s\n",user_input);
-	fprintf(stderr,"%*s",pos,""); //print pos spaces
-	fprintf(stderr, "^ ");
-	vfprintf(stderr, fmt, ap);
-	fprintf(stderr, "\n");
-	exit(1);
-}
-
-//次のトークンが期待している記号の時には、トークンを一つ読み進めて
-//真を返す。それ以外の場合には偽を返す。
-bool consume(char *op){
-	if(token->kind != TK_RESERVED ||
-			strlen(op) != token->len ||
-			memcmp(token->str,op,token->len))
-		return false;
-	token = token->next;
-	return true;
-}
-
-Token *consume_ident(){
-	if(token->kind != TK_IDENT)
-		return NULL;
-	Token *t =token;
-	token = token->next;
-	return t;
-}
-
-void expect(char *op){
-	if(token->kind != TK_RESERVED ||
-			strlen(op) != token->len ||
-			memcmp(token->str,op,token->len))
-		error_at(token->str, "expected '%c'",op);
-	token = token->next;
-}
-
-//次のトークンが数値の場合、トークンを一つ読み進めてその数値を返す。
-//それ以外の場合にはエラーを報告する。
-int expect_number(){
-	if (token->kind != TK_NUM)
-		error_at(token->str,"expected a number");
-	int val = token->val;
-	token = token->next;
-	return val;
-}
-
-bool at_eof(){
-	return token->kind == TK_EOF;
-}
-
-//新しいトークンを作成してcurに繋げる
-Token *new_token(TokenKind kind, Token *cur, char *str,int len){
-	Token *tok = calloc(1,sizeof(Token));
-	tok->kind = kind;
-	tok->str = str;
-	tok->len = len;
-	cur->next = tok;
-	return tok;
-}
-
-bool startswith(char *p,char *q){
-	return memcmp(p,q,strlen(q))== 0;
-}
-
-//変数を名前で検索する。見つからなかった場合はNULLを返す
-LVar *find_lvar(Token *tok){
-	for (LVar *var = locals; var; var = var->next)
-		if(var->len == tok->len && !memcmp(tok->str,var->name, var->len))
+// Find a local variable by name.
+Var *find_var(Token *tok) {
+	for (Var *var = locals; var; var = var->next)
+		if (strlen(var->name) == tok->len && !memcmp(tok->str, var->name, tok->len))
 			return var;
 	return NULL;
 }
 
-// 入力文字列user_inputをトークナイズしてそれを返す
-Token *tokenize(){
-	char *p = user_input;
-	Token head;
+Node *new_node(NodeKind kind) {
+	Node *node = calloc(1, sizeof(Node));
+	node->kind = kind;
+	return node;
+}
+
+Node *new_binary(NodeKind kind, Node *lhs, Node *rhs) {
+	Node *node = new_node(kind);
+	node->lhs = lhs;
+	node->rhs = rhs;
+	return node;
+}
+
+Node *new_unary(NodeKind kind, Node *expr) {
+	Node *node = new_node(kind);
+	node->lhs = expr;
+	return node;
+}
+
+Node *new_num(int val) {
+	Node *node = new_node(ND_NUM);
+	node->val = val;
+	return node;
+}
+
+Node *new_var(Var *var) {
+	Node *node = new_node(ND_VAR);
+	node->var = var;
+	return node;
+}
+
+Var *push_var(char *name) {
+	Var *var = calloc(1, sizeof(Var));
+	var->next = locals;
+	var->name = name;
+	locals = var;
+	return var;
+}
+
+Node *stmt();
+Node *expr();
+Node *assign();
+Node *equality();
+Node *relational();
+Node *add();
+Node *mul();
+Node *unary();
+Node *primary();
+
+// program = stmt*
+Program *program() {
+	locals = NULL;
+
+	Node head;
 	head.next = NULL;
-	Token *cur = &head;
+	Node *cur = &head;
 
-	while (*p){
-		if(isspace(*p)){
-			p++;
-			continue;
-		}
-		//複数文字
-		if(startswith(p, "==") || startswith(p, "!=") ||
-				startswith(p,"<=") || startswith(p,">=")){
-			cur = new_token(TK_RESERVED,cur,p,2);
-			p+= 2;
-			continue;
-		}
-
-		//単記号
-		if(strchr("+-*/()<>;",*p)){
-			cur = new_token(TK_RESERVED,cur,p++,1);
-			continue;
-		}
-
-		//単文字
-		if('a' <= *p && *p <= 'z'){
-			cur = new_token(TK_IDENT,cur,p++,1);
-			cur->len=1;
-			continue;
-		}
-		if(isdigit(*p)){
-			cur = new_token(TK_NUM,cur,p,0);
-			char *q =p;
-			cur->val = strtol(p,&p,10);
-			cur->len = p - q;
-			continue; 
-		}
-		error_at(p, "invalid token");
+	while (!at_eof()) {
+		cur->next = stmt();
+		cur = cur->next;
 	}
-	new_token(TK_EOF,cur,p,0);
-	return head.next;
+
+	Program *prog = calloc(1, sizeof(Program));
+	prog->node = head.next;
+	prog->locals = locals;
+	return prog;
+}
+
+// stmt = "return" expr ";"
+//      | expr ";"
+Node *stmt() {
+	if (consume("return")) {
+		Node *node = new_unary(ND_RETURN, expr());
+		expect(";");
+		return node;
+	}
+
+	Node *node = new_unary(ND_EXPR_STMT, expr());
+	expect(";");
+	return node;
+}
+
+// expr = assign
+Node *expr() {
+	return assign();
+}
+
+// assign = equality ("=" assign)?
+Node *assign() {
+	Node *node = equality();
+	if (consume("="))
+		node = new_binary(ND_ASSIGN, node, assign());
+	return node;
+}
+
+// equality = relational ("==" relational | "!=" relational)*
+Node *equality() {
+	Node *node = relational();
+
+	for (;;) {
+		if (consume("=="))
+			node = new_binary(ND_EQ, node, relational());
+		else if (consume("!="))
+			node = new_binary(ND_NE, node, relational());
+		else
+			return node;
+	}
+}
+
+// relational = add ("<" add | "<=" add | ">" add | ">=" add)*
+Node *relational() {
+	Node *node = add();
+
+	for (;;) {
+		if (consume("<"))
+			node = new_binary(ND_LT, node, add());
+		else if (consume("<="))
+			node = new_binary(ND_LE, node, add());
+		else if (consume(">"))
+			node = new_binary(ND_LT, add(), node);
+		else if (consume(">="))
+			node = new_binary(ND_LE, add(), node);
+		else
+			return node;
+	}
+}
+
+// add = mul ("+" mul | "-" mul)*
+Node *add() {
+	Node *node = mul();
+
+	for (;;) {
+		if (consume("+"))
+			node = new_binary(ND_ADD, node, mul());
+		else if (consume("-"))
+			node = new_binary(ND_SUB, node, mul());
+		else
+			return node;
+	}
+}
+
+// mul = unary ("*" unary | "/" unary)*
+Node *mul() {
+	Node *node = unary();
+
+	for (;;) {
+		if (consume("*"))
+			node = new_binary(ND_MUL, node, unary());
+		else if (consume("/"))
+			node = new_binary(ND_DIV, node, unary());
+		else
+			return node;
+	}
+}
+
+// unary = ("+" | "-")? unary
+//       | primary
+Node *unary() {
+	if (consume("+"))
+		return unary();
+	if (consume("-"))
+		return new_binary(ND_SUB, new_num(0), unary());
+	return primary();
+}
+
+// primary = "(" expr ")" | ident | num
+Node *primary() {
+	if (consume("(")) {
+		Node *node = expr();
+		expect(")");
+		return node;
+	}
+
+	Token *tok = consume_ident();
+	if (tok) {
+		Var *var = find_var(tok);
+		if (!var)
+			var = push_var(strndup(tok->str, tok->len));
+		return new_var(var);
+	}
+
+	return new_num(expect_number());
 }
