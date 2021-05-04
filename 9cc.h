@@ -22,6 +22,20 @@ struct Token{
 	int len;        //トークンの長さ
 };
 
+
+typedef struct LVar LVar;
+
+//ローカル変数の型
+struct LVar {
+	LVar *next;  //次の変数化NULL
+	char *name;  //変数の名前
+	int len;  //名前の長さ
+	int offset; //RBPからのオフセット
+};
+
+//ローカル変数
+LVar *locals;
+
 void error(char *fmt,...);
 void error_at(char *loc, char *fmt,...);
 bool consume(char *op);
@@ -31,6 +45,7 @@ int expect_number();
 bool at_eof();
 Token *new_token(TokenKind kind, Token *cur, char*str,int len);
 Token *tokenize();
+LVar *find_lvar(Token *tok);
 
 extern char *user_input;
 
@@ -63,5 +78,9 @@ struct Node {
 	int val;       //kindがND_NUMの場合のみ使う
 	int offset;    //kindがND_LVARの場合のみ使う
 };
+
+//ローカル変数
+LVar *locals;
 void program();
 void codegen();
+

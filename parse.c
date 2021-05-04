@@ -82,6 +82,14 @@ bool startswith(char *p,char *q){
 	return memcmp(p,q,strlen(q))== 0;
 }
 
+//変数を名前で検索する。見つからなかった場合はNULLを返す
+LVar *find_lvar(Token *tok){
+	for (LVar *var = locals; var; var = var->next)
+		if(var->len == tok->len && !memcmp(tok->str,var->name, var->len))
+			return var;
+	return NULL;
+}
+
 // 入力文字列user_inputをトークナイズしてそれを返す
 Token *tokenize(){
 	char *p = user_input;
